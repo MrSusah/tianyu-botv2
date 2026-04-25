@@ -53,7 +53,10 @@ class EconomyManager {
                 user = new User({ userId, credits: 1000, points: 0 });
                 await user.save();
             }
-            if (user.credits < amount) return false;
+            if (user.credits < amount) {
+                console.log(`❌ Insufficient credits for ${userId}. Balance: ${user.credits}, Required: ${amount}`);
+                return false;
+            }
             user.credits -= amount;
             await user.save();
             console.log(`✅ Removed ${amount} credits from ${userId}. New: ${user.credits}`);

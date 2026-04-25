@@ -1,3 +1,4 @@
+const economy = require('../utils/economy'); // Tambahkan ini di bagian atas file
 const {
     ActionRowBuilder,
     ButtonBuilder,
@@ -1578,95 +1579,98 @@ module.exports = {
             }
 
             // ==================== SHOP BUY (DIPERBAIKI) ====================
-            if (interaction.customId.startsWith("shop_buy_")) {
-                const lockKey = acquireLock(interaction.user.id, "shop", 5000);
-                if (!lockKey) {
-                    return interaction.reply({ content: "⏳ Proses pembelian sedang berjalan, tunggu sebentar!", flags: 64 });
-                }
-                
-                try {
-                    const freshUser = await getUser(User, interaction.user.id);
-                    const category = interaction.customId.replace("shop_buy_", "");
-                    const itemName = interaction.values[0];
-                    let itemData, price;
-                    
-                    if (category === "rods") {
-                        itemData = rods[itemName];
-                        price = itemData.price;
-                    } else if (category === "baits") {
-                        itemData = baits[itemName];
-                        price = itemData.price;
-                    } else if (category === "luckpotions") {
-                        itemData = potions[itemName];
-                        price = itemData.price;
-                    } else if (category === "cooldownpotions") {
-                        itemData = potions[itemName];
-                        price = itemData.price;
-                    } else {
-                        return interaction.reply({ content: "❌ Kategori tidak valid!", flags: 64 });
-                    }
-                    
-                    if (!itemData) {
-                        return interaction.reply({ content: "❌ Item tidak ditemukan!", flags: 64 });
-                    }
-                    
-                    const currentQty = freshUser.items?.get(itemName) || 0;
-                    if ((category === "rods" || category === "baits") && currentQty > 0) {
-                        return interaction.reply({ content: `❌ Kamu sudah memiliki **${itemName}**! Tidak bisa membeli dua kali.`, flags: 64 });
-                    }
-                    
-                    if (freshUser.credits < price) {
-                        return interaction.reply({ content: `❌ Credit kurang! Butuh ${price.toLocaleString()}💰, kamu punya ${freshUser.credits.toLocaleString()}💰`, flags: 64 });
-                    }
-                    
-                    // === PERBAIKAN: Kurangi credits dengan benar ===
-                    await User.updateOne(
-                        { userId: interaction.user.id },
-                        { $inc: { credits: -price } }
-                    );
-                    
-                    await User.updateOne(
-                        { userId: interaction.user.id },
-                        { $inc: { [`items.${itemName}`]: 1 } }
-                    );
-                    
-                    const updatedUser = await getUser(User, interaction.user.id);
-                    
-                    const embed = new EmbedBuilder()
-                        .setTitle("✅ **PEMBELIAN BERHASIL!**")
-                        .setDescription(`Kamu berhasil membeli **${itemName}**!`)
-                        .setColor(0x00ff00)
-                        .addFields(
-                            { name: "💰 Harga", value: `${price.toLocaleString()} credits`, inline: true },
-                            { name: "💎 Sisa Credits", value: `${updatedUser.credits.toLocaleString()} credits`, inline: true },
-                            { name: "📦 Item", value: itemName, inline: true }
-                        )
-                        .setTimestamp();
-                    
-                    if (category === "rods") {
-                        embed.addFields({ name: "🎣 **Tips**", value: "Gunakan menu **Inventory** untuk equip rod baru!", inline: false });
-                    } else if (category === "baits") {
-                        embed.addFields({ name: "🪱 **Tips**", value: "Gunakan menu **Inventory** untuk equip bait baru!", inline: false });
-                    } else {
-                        embed.addFields({ name: "🧪 **Tips**", value: "Gunakan menu **Potion** atau **Inventory** untuk mengaktifkan potion!", inline: false });
-                    }
-                    
-                    const backBtn = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId("menu_shop").setLabel("🛒 Kembali ke Shop").setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId("back_to_menu").setLabel("🔙 Kembali ke Menu").setStyle(ButtonStyle.Secondary)
-                    );
-                    
-                    await interaction.update({ embeds: [embed], components: [backBtn] });
-                    
-                } catch (error) {
-                    console.error("Error in shop buy:", error);
-                    await interaction.reply({ content: "❌ Terjadi kesalahan saat membeli item!", flags: 64 });
-                } finally {
-                    releaseLock(lockKey);
-                }
-                return true;
-            }
-
+if (interaction.customId.startsWith("shop_buy_")) {
+    const lockKey = acquireLock(interaction.user.id, "shop", 5000);
+    if (!lockKey) {
+        return interaction.reply({ content: "⏳ Proses pembelian sedang berjalan, tunggu sebentar!", flags: 64 });
+    }
+    
+    try {
+        const freshUser = await getUser(User, interaction.user.id);
+        const category = interaction.customId.replace("shop_buy_", "");
+        const itemName = interaction.values[0];
+        let itemData, price;
+        
+        if (category === "rods") {
+            itemData = rods[itemName];
+            price = itemData.price;
+        } else if (category === "baits") {
+            itemData = baits[itemName];
+            price = itemData.price;
+        } else if (category === "luckpotions") {
+            itemData = potions[itemName];
+            price = itemData.price;
+        } else if (category === "cooldownpotions") {
+            itemData = potions[itemName];
+            price = itemData.price;
+        } else {
+            return interaction.reply({ content: "❌ Kategori tidak valid!", flags: 64 });
+        }
+        
+        if (!itemData) {
+            return interaction.reply({ content: "❌ Item tidak ditemukan!", flags: 64 });
+        }
+        
+        const currentQty = freshUser.items?.get(itemName) || 0;
+        if ((category === "rods" || category === "baits") && currentQty > 0) {
+            return interaction.reply({ content: `❌ Kamu sudah memiliki **${itemName}**! Tidak bisa membeli dua kali.`, flags: 64 });
+        }
+        
+        if (freshUser.credits < price) {
+            return interaction.reply({ content: `❌ Credit kurang! Butuh ${price.toLocaleString()}💰, kamu punya ${freshUser.credits.toLocaleString()}💰`, flags: 64 });
+        }
+        
+        // ========== PERBAIKAN: Kurangi credits dengan economy manager ==========
+        const removeSuccess = await economy.removeCredits(interaction.user.id, price);
+        
+        if (!removeSuccess) {
+            return interaction.reply({ content: "❌ Gagal mengurangi credits! Coba lagi.", flags: 64 });
+        }
+        
+        // Tambah item ke inventory
+        await User.updateOne(
+            { userId: interaction.user.id },
+            { $inc: { [`items.${itemName}`]: 1 } }
+        );
+        
+        const updatedUser = await getUser(User, interaction.user.id);
+        
+        const embed = new EmbedBuilder()
+            .setTitle("✅ **PEMBELIAN BERHASIL!**")
+            .setDescription(`Kamu berhasil membeli **${itemName}**!`)
+            .setColor(0x00ff00)
+            .addFields(
+                { name: "💰 Harga", value: `${price.toLocaleString()} credits`, inline: true },
+                { name: "💎 Sisa Credits", value: `${updatedUser.credits.toLocaleString()} credits`, inline: true },
+                { name: "📦 Item", value: itemName, inline: true }
+            )
+            .setTimestamp();
+        
+        if (category === "rods") {
+            embed.addFields({ name: "🎣 **Tips**", value: "Gunakan menu **Inventory** untuk equip rod baru!", inline: false });
+        } else if (category === "baits") {
+            embed.addFields({ name: "🪱 **Tips**", value: "Gunakan menu **Inventory** untuk equip bait baru!", inline: false });
+        } else {
+            embed.addFields({ name: "🧪 **Tips**", value: "Gunakan menu **Potion** atau **Inventory** untuk mengaktifkan potion!", inline: false });
+        }
+        
+        const backBtn = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId("menu_shop").setLabel("🛒 Kembali ke Shop").setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId("back_to_menu").setLabel("🔙 Kembali ke Menu").setStyle(ButtonStyle.Secondary)
+        );
+        
+        await interaction.update({ embeds: [embed], components: [backBtn] });
+        
+        console.log(`🛒 [SHOP] ${interaction.user.username} bought ${itemName} for ${price} credits. New balance: ${updatedUser.credits}`);
+        
+    } catch (error) {
+        console.error("Error in shop buy:", error);
+        await interaction.reply({ content: "❌ Terjadi kesalahan saat membeli item!", flags: 64 });
+    } finally {
+        releaseLock(lockKey);
+    }
+    return true;
+}
             // ==================== BACK TO MENU ====================
             if (interaction.customId === "back_to_menu") {
                 const row1 = new ActionRowBuilder().addComponents(
