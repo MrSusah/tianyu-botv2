@@ -1,0 +1,527 @@
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const economy = require('./economy');
+const { Cooldown, User } = require('../database/mongo');
+
+let gameModules = {};
+
+function setGameModules(modules) {
+  gameModules = modules;
+}
+
+async function handleRewardButton(interaction, client) {
+  const userId = interaction.user.id;
+  const rewardType = interaction.customId.replace("reward_", "");
+  
+  let cooldownTime, rewardMin, rewardMax, rewardName;
+  
+  switch (rewardType) {
+    case "daily":
+      cooldownTime = 86400000;
+      rewardMin = 50;
+      rewardMax = 100;
+      rewardName = "Daily";
+      break;
+    case "hourly":
+      cooldownTime = 3600000;
+      rewardMin = 10;
+      rewardMax = 50;
+      rewardName = "Hourly";
+      break;
+    case "weekly":
+      cooldownTime = 604800000;
+      rewardMin = 200;
+      rewardMax = 500;
+      rewardName = "Weekly";
+      break;
+    case "monthly":
+      cooldownTime = 2592000000;
+      rewardMin = 1000;
+      rewardMax = 2000;
+      rewardName = "Monthly";
+      break;
+    case "yearly":
+      cooldownTime = 31536000000;
+      rewardMin = 3000;
+      rewardMax = 5000;
+      rewardName = "Yearly";
+      break;
+    default:
+      return interaction.reply({ content: "❌ Reward tidak valid!", flags: 64 });
+  }
+  
+  const cooldown = await Cooldown.findOne({ userId, command: rewardType });
+  
+  if (cooldown) {
+    const timeLeft = cooldownTime - (Date.now() - new Date(cooldown.lastUsed).getTime());
+    if (timeLeft > 0) {
+      const hours = Math.floor(timeLeft / 3600000);
+      const minutes = Math.floor((timeLeft % 3600000) / 60000);
+      let timeText = "";
+      if (hours > 0) timeText += `${hours} jam `;
+      if (minutes > 0) timeText += `${minutes} menit`;
+      
+      return interaction.reply({ 
+        content: `⏰ Cooldown! Kamu bisa klaim **${rewardName}** lagi ${timeText} lagi.`,
+        flags: 64 
+      });
+    }
+  }
+  
+  const reward = Math.floor(Math.random() * (rewardMax - rewardMin + 1)) + rewardMin;
+  
+  await User.findOneAndUpdate(
+    { userId },
+    { $inc: { credits: reward } },
+    { upsert: true }
+  );
+  
+  await Cooldown.findOneAndUpdate(
+    { userId, command: rewardType },
+    { lastUsed: new Date() },
+    { upsert: true }
+  );
+  
+  const embed = new EmbedBuilder()
+    .setTitle(`✅ **${rewardName} REWARD CLAIMED!**`)
+    .setDescription(`Kamu mendapat **${reward.toLocaleString()} credits**!`)
+    .setColor(0x00ff00)
+    .addFields(
+      { name: "💰 Total Reward", value: `${reward.toLocaleString()} credits`, inline: true },
+      { name: "📅 Reward Type", value: rewardName, inline: true }
+    )
+    .setFooter({ text: "Kembali lagi besok untuk reward berikutnya!" })
+    .setTimestamp();
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("back_to_reward_menu").setLabel("🎁 Kembali ke Reward Menu").setStyle(ButtonStyle.Secondary)
+  );
+  
+  return interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+}
+
+async function showRewardMenu(interaction) {
+  const embed = new EmbedBuilder()
+    .setTitle("🎁 **REWARD SYSTEM** 🎁")
+    .setDescription("Pilih jenis reward yang ingin diklaim:")
+    .setColor(0xffaa00)
+    .addFields(
+      { name: "📅 Daily", value: "50-100 credits\n⏰ Cooldown: 24 jam", inline: true },
+      { name: "⏰ Hourly", value: "10-50 credits\n⏰ Cooldown: 1 jam", inline: true },
+      { name: "📆 Weekly", value: "200-500 credits\n⏰ Cooldown: 7 hari", inline: true },
+      { name: "🌙 Monthly", value: "1000-2000 credits\n⏰ Cooldown: 30 hari", inline: true },
+      { name: "🎉 Yearly", value: "3000-5000 credits\n⏰ Cooldown: 365 hari", inline: true }
+    )
+    .setFooter({ text: "Klik tombol di bawah untuk klaim reward!" })
+    .setTimestamp();
+
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder().setCustomId("reward_daily").setLabel("📅 Daily").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("reward_hourly").setLabel("⏰ Hourly").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("reward_weekly").setLabel("📆 Weekly").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("reward_monthly").setLabel("🌙 Monthly").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("reward_yearly").setLabel("🎉 Yearly").setStyle(ButtonStyle.Danger)
+    );
+
+  const backRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("back_to_main_menu").setLabel("🔙 Kembali ke Menu Utama").setStyle(ButtonStyle.Secondary)
+  );
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply({ embeds: [embed], components: [row, backRow] });
+  }
+  return interaction.reply({ embeds: [embed], components: [row, backRow], flags: 64 });
+}
+
+async function showProfile(interaction, client, targetUserId = null) {
+  const userId = targetUserId || interaction.user.id;
+  let targetUser = interaction.user;
+  
+  if (targetUserId && targetUserId !== interaction.user.id) {
+    try {
+      targetUser = await client.users.fetch(targetUserId);
+    } catch (error) {
+      targetUser = interaction.user;
+    }
+  }
+  
+  const user = await User.findOne({ userId: targetUser.id });
+  if (!user) {
+    return interaction.reply({ content: "❌ User tidak ditemukan dalam database!", flags: 64 });
+  }
+  
+  const rods = {
+    "Basic Rod": { luck: 1, emoji: "🎣" }, "Iron Rod": { luck: 1.2, emoji: "⚙️" },
+    "Silver Rod": { luck: 1.4, emoji: "🥈" }, "Golden Rod": { luck: 1.7, emoji: "👑" },
+    "Dragon Rod": { luck: 2, emoji: "🐉" }, "Mythic Rod": { luck: 2.5, emoji: "🏆" },
+    "God Rod": { luck: 3, emoji: "⚡" }, "Legendary Rod": { luck: 3.5, emoji: "🌟" },
+    "Celestial Rod": { luck: 4.0, emoji: "🌙" }, "Divine Rod": { luck: 4.5, emoji: "✨" },
+    "Ethereal Rod": { luck: 5.0, emoji: "🔮" }, "Abyssal Rod": { luck: 5.5, emoji: "🌊" },
+    "Primordial Rod": { luck: 6.0, emoji: "🌀" }
+  };
+  
+  const baits = {
+    "Basic Bait": { luck: 1, emoji: "🪱" }, "Herbal Bait": { luck: 1.2, emoji: "🌿" },
+    "Magic Bait": { luck: 1.5, emoji: "✨" }, "Divine Bait": { luck: 1.8, emoji: "💫" },
+    "God Bait": { luck: 2.2, emoji: "⚡" }, "Mythic Bait": { luck: 2.5, emoji: "🏆" },
+    "Legendary Bait": { luck: 3.0, emoji: "🌟" }, "Celestial Bait": { luck: 3.5, emoji: "🌙" },
+    "Divine Bait+": { luck: 4.0, emoji: "✨" }, "Ethereal Bait": { luck: 4.5, emoji: "🔮" },
+    "Primordial Bait": { luck: 5.0, emoji: "🌀" }
+  };
+  
+  const totalFish = user.totalFishCaught || 0;
+  const totalJenis = user.fishInventory?.size || 0;
+  
+  const rodLuck = rods[user.equippedRod]?.luck || 1;
+  const baitLuck = baits[user.equippedBait]?.luck || 1;
+  const totalLuck = rodLuck * baitLuck;
+  
+  let potionStatus = "Tidak aktif";
+  if (user.activePotion) {
+    const remainMin = Math.ceil((user.activePotion.expiresAt - Date.now()) / 60000);
+    potionStatus = `${user.activePotion.name}\n⏰ ${remainMin} menit`;
+  }
+  
+  const embed = new EmbedBuilder()
+    .setTitle(`🎣 ${targetUser.username}'s Profile`)
+    .setColor(0x00ae86)
+    .setThumbnail(targetUser.displayAvatarURL())
+    .addFields(
+      { name: "💰 **Credits**", value: `${user.credits.toLocaleString()} credits`, inline: true },
+      { name: "⭐ **Points**", value: `${user.points.toLocaleString()} points`, inline: true },
+      { name: "📈 **Activity Points**", value: `${user.activityPoints.toLocaleString()} pts`, inline: true },
+      { name: "🏆 **Total Fishing Credits**", value: `${user.totalFishingCredits.toLocaleString()} credits`, inline: true },
+      { name: "🐟 **Total Ikan**", value: `${totalFish} ekor`, inline: true },
+      { name: "📋 **Jenis Ikan**", value: `${totalJenis} jenis`, inline: true },
+      { name: "🎣 **Rod**", value: `${user.equippedRod}\n\`${rodLuck.toFixed(2)}x luck\``, inline: true },
+      { name: "🪱 **Bait**", value: `${user.equippedBait}\n\`${baitLuck.toFixed(2)}x luck\``, inline: true },
+      { name: "🧪 **Potion**", value: potionStatus, inline: true }
+    )
+    .setFooter({ text: "Gunakan !profile @user untuk lihat profil orang lain" })
+    .setTimestamp();
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("back_to_main_menu").setLabel("🔙 Kembali ke Menu Utama").setStyle(ButtonStyle.Secondary)
+  );
+  
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply({ embeds: [embed], components: [row] });
+  }
+  return interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+}
+
+async function showActivityLeaderboard(interaction, client) {
+  await interaction.deferReply({ flags: 64 });
+  
+  const topPoints = await User.find().sort({ points: -1 }).limit(10);
+  const topActivity = await User.find().sort({ activityPoints: -1 }).limit(10);
+  const topSeason = await User.find().sort({ seasonPoints: -1 }).limit(10);
+  const topFishing = await User.find().sort({ totalFishingCredits: -1 }).limit(10);
+  
+  let pointsText = "";
+  for (let i = 0; i < topPoints.length; i++) {
+    const u = topPoints[i];
+    let name = "Unknown";
+    try {
+      const d = await client.users.fetch(u.userId);
+      name = d.username;
+    } catch {}
+    const medal = i === 0 ? "👑" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i+1}.`;
+    pointsText += `${medal} **${name}** - ${u.points.toLocaleString()} pts\n`;
+  }
+  
+  let activityText = "";
+  for (let i = 0; i < topActivity.length; i++) {
+    const u = topActivity[i];
+    let name = "Unknown";
+    try {
+      const d = await client.users.fetch(u.userId);
+      name = d.username;
+    } catch {}
+    const medal = i === 0 ? "👑" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i+1}.`;
+    activityText += `${medal} **${name}** - ${u.activityPoints.toLocaleString()} pts\n`;
+  }
+  
+  let seasonText = "";
+  for (let i = 0; i < topSeason.length; i++) {
+    const u = topSeason[i];
+    let name = "Unknown";
+    try {
+      const d = await client.users.fetch(u.userId);
+      name = d.username;
+    } catch {}
+    const medal = i === 0 ? "👑" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i+1}.`;
+    seasonText += `${medal} **${name}** - ${u.seasonPoints.toLocaleString()} pts\n`;
+  }
+  
+  let fishingText = "";
+  for (let i = 0; i < topFishing.length; i++) {
+    const u = topFishing[i];
+    let name = "Unknown";
+    try {
+      const d = await client.users.fetch(u.userId);
+      name = d.username;
+    } catch {}
+    const medal = i === 0 ? "👑" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i+1}.`;
+    fishingText += `${medal} **${name}** - ${(u.totalFishingCredits || 0).toLocaleString()} credits\n`;
+  }
+  
+  const embed = new EmbedBuilder()
+    .setTitle("📊 **ACTIVITY LEADERBOARD** 📊")
+    .setDescription("Top player berdasarkan berbagai kategori!")
+    .setColor(0x00ff88)
+    .addFields(
+      { name: "⭐ **TOP POINTS**", value: pointsText || "Tidak ada data", inline: true },
+      { name: "📈 **TOP ACTIVITY**", value: activityText || "Tidak ada data", inline: true },
+      { name: "🏆 **TOP SEASON**", value: seasonText || "Tidak ada data", inline: true },
+      { name: "💰 **TOP FISHING**", value: fishingText || "Tidak ada data", inline: true }
+    )
+    .setFooter({ text: "Update setiap saat | Gunakan !points untuk cek points sendiri" })
+    .setTimestamp();
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("back_to_main_menu").setLabel("🔙 Kembali ke Menu Utama").setStyle(ButtonStyle.Secondary)
+  );
+  
+  return interaction.editReply({ embeds: [embed], components: [row] });
+}
+
+async function showActivityInfo(interaction, client) {
+  const user = await User.findOne({ userId: interaction.user.id });
+  
+  const embed = new EmbedBuilder()
+    .setTitle("📊 **Activity Points System**")
+    .setDescription("Dapatkan points dari aktivitas!")
+    .setColor(0x00ff88)
+    .addFields(
+      { name: "💬 **Chat**", value: "+1 points/pesan (cooldown 10 detik/channel)", inline: false },
+      { name: "📸 **Gallery**", value: "+5 points/post, +2 points/komentar", inline: false },
+      { name: "🎯 **Reaction**", value: "+3 points (cooldown 30 detik)", inline: false },
+      { name: "🎙️ **Voice**", value: "+1 points/2 menit (minimal 2 orang)", inline: false },
+      { name: "🎣 **Fishing**", value: "Dapat credits dari mancing", inline: false },
+      { name: "🔄 **Convert**", value: "100 credits = 1 point", inline: false },
+      { name: "━━━━━━━━━━", value: "━━━━━━━━━━━━━━━━━━", inline: false },
+      { name: "⭐ **Points Kamu**", value: `${user?.points?.toLocaleString() || 0} points`, inline: true },
+      { name: "🏆 **Season Points**", value: `${user?.seasonPoints?.toLocaleString() || 0} points`, inline: true },
+      { name: "📈 **Activity Points**", value: `${user?.activityPoints?.toLocaleString() || 0} points`, inline: true }
+    )
+    .setFooter({ text: "Gunakan !convert <credits> untuk convert ke points" })
+    .setTimestamp();
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("back_to_main_menu").setLabel("🔙 Kembali ke Menu Utama").setStyle(ButtonStyle.Secondary)
+  );
+  
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply({ embeds: [embed], components: [row] });
+  }
+  return interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+}
+
+async function showCasinoMenu(interaction) {
+  const embed = new EmbedBuilder()
+    .setColor('#ffd700')
+    .setTitle('🎰 CASINO ROYALE 🎰')
+    .setDescription('Pilih permainan casino di bawah ini!')
+    .addFields(
+      { name: '🪙 Coin Flip', value: 'Tebak kepala/ekor - 30% win chance (x2)', inline: true },
+      { name: '✊ RPS', value: 'Rock Paper Scissors - Menang dapat x2', inline: true },
+      { name: '🎰 Slots', value: 'Slot machine - Jackpot hingga x15', inline: true },
+      { name: '🎡 Roulette', value: 'Tebak warna/nomor - x2 sampai x36', inline: true },
+      { name: '🎲 Dice', value: 'Tebak High/Low - x2', inline: true }
+    )
+    .setFooter({ text: 'Semua game menggunakan credits | Gunakan !points untuk cek saldo' });
+
+  const row1 = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder().setCustomId("casino_cf").setLabel('🪙 Coin Flip').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("casino_rps").setLabel('✊ RPS').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("casino_slots").setLabel('🎰 Slots').setStyle(ButtonStyle.Primary)
+    );
+
+  const row2 = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder().setCustomId("casino_roulette").setLabel('🎡 Roulette').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("casino_dice").setLabel('🎲 Dice').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("back_to_main_menu").setLabel('🔙 Kembali').setStyle(ButtonStyle.Secondary)
+    );
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply({ embeds: [embed], components: [row1, row2] });
+  }
+  return interaction.reply({ embeds: [embed], components: [row1, row2], flags: 64 });
+}
+
+async function showMainMenu(interaction) {
+  const embed = new EmbedBuilder()
+    .setColor('#00ff00')
+    .setTitle('🎮 **KameBot - MAIN MENU** 🎮')
+    .setDescription('Selamat datang! Pilih kategori di bawah ini:')
+    .addFields(
+      { name: '🎣 **Fishing**', value: 'Mancing ikan di berbagai zona', inline: true },
+      { name: '🏹 **Hunt/Dungeon**', value: 'Berburu hewan atau jelajahi dungeon', inline: true },
+      { name: '🎰 **Casino**', value: 'Coin Flip, RPS, Slots, Roulette, Dice', inline: true },
+      { name: '━━━━━━━━━━', value: '━━━━━━━━━━━━━━━━━━', inline: false },
+      { name: '👤 **Profile**', value: 'Lihat profil dan stats kamu', inline: true },
+      { name: '🎁 **Reward**', value: 'Klaim reward harian/mingguan', inline: true },
+      { name: '📊 **Activity**', value: 'Lihat aktivitas dan leaderboard', inline: true }
+    )
+    .setFooter({ text: 'Gunakan !command untuk perintah cepat | Semua game menggunakan credits' })
+    .setTimestamp();
+
+  const row1 = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder().setCustomId("menu_fishing").setLabel('🎣 Fishing').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("menu_hunt").setLabel('🏹 Hunt/Dungeon').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("menu_casino").setLabel('🎰 Casino').setStyle(ButtonStyle.Primary)
+    );
+
+  const row2 = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder().setCustomId("menu_profile").setLabel('👤 Profile').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("menu_reward").setLabel('🎁 Reward').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("menu_activity").setLabel('📊 Activity').setStyle(ButtonStyle.Secondary)
+    );
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply({ embeds: [embed], components: [row1, row2] });
+  }
+  return interaction.reply({ embeds: [embed], components: [row1, row2], flags: 64 });
+}
+
+async function showHuntMenu(interaction) {
+  const embed = new EmbedBuilder()
+    .setColor('#8B4513')
+    .setTitle('🏹 **HUNT & DUNGEON** 🏰')
+    .setDescription('Pilih game di bawah ini!')
+    .addFields(
+      { name: '🏹 **Hunt**', value: 'Berburu hewan di hutan\nCooldown: 1 jam\nReward: 50-200 credits (60% win chance)', inline: true },
+      { name: '🏰 **Dungeon**', value: 'Jelajahi dungeon lawan monster\nCooldown: 2 jam\nReward: 200-1000 credits (40% win chance)', inline: true }
+    )
+    .setFooter({ text: '⚠️ Game ini hanya bisa dimainkan di channel khusus hutan!' });
+
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder().setCustomId("game_hunt").setLabel('🏹 Hunt').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("game_dungeon").setLabel('🏰 Dungeon').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("back_to_main_menu").setLabel('🔙 Kembali').setStyle(ButtonStyle.Secondary)
+    );
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply({ embeds: [embed], components: [row] });
+  }
+  return interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+}
+
+async function showTransferInfo(interaction) {
+  const embed = new EmbedBuilder()
+    .setTitle("💸 **TRANSFER CREDITS**")
+    .setDescription("Transfer credits ke user lain!")
+    .setColor(0x00ff88)
+    .addFields(
+      { name: "📝 **Cara Penggunaan**", value: "`!transfer @user <jumlah>`", inline: false },
+      { name: "📌 **Contoh**", value: "`!transfer @Kame 1000`", inline: false },
+      { name: "⚠️ **Aturan**", value: "• Minimal transfer 100 credits\n• Tidak bisa transfer ke diri sendiri", inline: false }
+    )
+    .setFooter({ text: "Gunakan command di chat untuk transfer!" })
+    .setTimestamp();
+  
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("back_to_main_menu").setLabel("🔙 Kembali ke Menu Utama").setStyle(ButtonStyle.Secondary)
+  );
+  
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply({ embeds: [embed], components: [row] });
+  }
+  return interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+}
+
+async function handleGameButton(interaction, client) {
+  const customId = interaction.customId;
+  
+  if (customId === "back_to_main_menu") {
+    return showMainMenu(interaction);
+  }
+  if (customId === "menu_fishing") {
+    const fishingModule = gameModules.fishing;
+    if (fishingModule && fishingModule.showFishingMenu) {
+      return fishingModule.showFishingMenu(interaction);
+    }
+    return interaction.reply({ content: "❌ Modul fishing tidak tersedia!", flags: 64 });
+  }
+  if (customId === "menu_hunt") {
+    return showHuntMenu(interaction);
+  }
+  if (customId === "menu_casino") {
+    return showCasinoMenu(interaction);
+  }
+  if (customId === "menu_profile") {
+    return showProfile(interaction, client);
+  }
+  if (customId === "menu_reward") {
+    return showRewardMenu(interaction);
+  }
+  if (customId === "menu_activity") {
+    return showActivityInfo(interaction, client);
+  }
+  if (customId === "menu_activity_lb") {
+    return showActivityLeaderboard(interaction, client);
+  }
+  if (customId === "menu_transfer") {
+    return showTransferInfo(interaction);
+  }
+  
+  if (customId.startsWith("reward_")) {
+    if (customId === "reward_back") {
+      return showRewardMenu(interaction);
+    }
+    return handleRewardButton(interaction, client);
+  }
+  if (customId === "back_to_reward_menu") {
+    return showRewardMenu(interaction);
+  }
+  
+  if (customId === "casino_cf" || customId === "casino_rps" || customId === "casino_slots" || 
+      customId === "casino_roulette" || customId === "casino_dice") {
+    const gameName = customId.replace("casino_", "");
+    const gameModule = gameModules[gameName];
+    if (gameModule && gameModule.showGameMenu) {
+      return gameModule.showGameMenu(interaction);
+    }
+    return interaction.reply({ content: `❌ Game ${gameName} tidak tersedia!`, flags: 64 });
+  }
+  
+  if (customId === "back_to_casino") {
+    return showCasinoMenu(interaction);
+  }
+  
+  if (customId === "game_hunt") {
+    const huntModule = gameModules.hunt;
+    if (huntModule && huntModule.showGameMenu) {
+      return huntModule.showGameMenu(interaction);
+    }
+    return interaction.reply({ content: "❌ Game hunt tidak tersedia!", flags: 64 });
+  }
+  if (customId === "game_dungeon") {
+    const dungeonModule = gameModules.dungeon;
+    if (dungeonModule && dungeonModule.showGameMenu) {
+      return dungeonModule.showGameMenu(interaction);
+    }
+    return interaction.reply({ content: "❌ Game dungeon tidak tersedia!", flags: 64 });
+  }
+  
+  return false;
+}
+
+module.exports = {
+  handleGameButton,
+  showMainMenu,
+  showCasinoMenu,
+  showHuntMenu,
+  showProfile,
+  showRewardMenu,
+  showActivityInfo,
+  showActivityLeaderboard,
+  showTransferInfo,
+  setGameModules
+};

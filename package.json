@@ -1,0 +1,21 @@
+{
+  "name": "tianyu-bot",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "kame",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "canvas": "^3.2.3",
+    "discord.js": "^14.26.3",
+    "dotenv": "^17.4.2",
+    "mongodb": "^7.1.1",
+    "mongoose": "^9.5.0",
+    "node-cron": "^4.2.1"
+  }
+}
