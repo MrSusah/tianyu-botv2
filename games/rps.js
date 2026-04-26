@@ -6,6 +6,24 @@ const choices = ['rock', 'paper', 'scissors'];
 const emojis = { rock: '🪨', paper: '📄', scissors: '✂️' };
 const names = { rock: 'BATU', paper: 'KERTAS', scissors: 'GUNTING' };
 
+// Aturan RPS yang BENAR:
+// BATU (rock) > GUNTING (scissors)
+// GUNTING (scissors) > KERTAS (paper)
+// KERTAS (paper) > BATU (rock)
+
+function getBattleResult(player, bot) {
+    if (player === bot) return 'draw';
+    
+    if (
+        (player === 'rock' && bot === 'scissors') ||
+        (player === 'scissors' && bot === 'paper') ||
+        (player === 'paper' && bot === 'rock')
+    ) {
+        return 'win';
+    }
+    return 'lose';
+}
+
 module.exports = {
     name: 'rps',
     description: 'Rock Paper Scissors - 30% win chance',
@@ -35,11 +53,29 @@ module.exports = {
         }
         
         const botChoice = choices[Math.floor(Math.random() * 3)];
-        const isDraw = playerChoice === botChoice;
+        const battleResult = getBattleResult(playerChoice, botChoice);
         
-        // PELUANG MENANG 30% (tidak tergantung aturan RPS)
-        const isWin = !isDraw && Math.random() < 0.3;
+        let isWin = false;
+        let isDraw = false;
+        let resultText = '';
+        let resultColor = '#ff0000';
         
+        // Aturan RPS untuk menentukan hasil
+        if (battleResult === 'win') {
+            isWin = true;
+            resultText = '✅ MENANG!';
+            resultColor = '#00ff00';
+        } else if (battleResult === 'draw') {
+            isDraw = true;
+            resultText = '🤝 SERI!';
+            resultColor = '#ffff00';
+        } else {
+            isWin = false;
+            resultText = '❌ KALAH!';
+            resultColor = '#ff0000';
+        }
+        
+        // Proses transaksi
         if (isWin) {
             await economy.addCredits(message.author.id, bet);
         } else if (!isDraw) {
@@ -48,24 +84,27 @@ module.exports = {
         
         const newBalance = await economy.getBalance(message.author.id);
         
-        // Tentukan teks hasil untuk tampilan
-        let resultText = '';
-        let resultColor = '#ff0000';
-        
-        if (isWin) {
-            resultText = '✅ MENANG!';
-            resultColor = '#00ff00';
-        } else if (isDraw) {
-            resultText = '🤝 SERI!';
-            resultColor = '#ffff00';
-        } else {
-            resultText = '❌ KALAH!';
-            resultColor = '#ff0000';
+        // Penjelasan aturan
+        let ruleExplanation = '';
+        if (!isDraw && !isWin) {
+            if (playerChoice === 'rock' && botChoice === 'paper') {
+                ruleExplanation = '📄 KERTAS membungkus BATU!';
+            } else if (playerChoice === 'paper' && botChoice === 'scissors') {
+                ruleExplanation = '✂️ GUNTING memotong KERTAS!';
+            } else if (playerChoice === 'scissors' && botChoice === 'rock') {
+                ruleExplanation = '🪨 BATU menghancurkan GUNTING!';
+            } else if (playerChoice === 'rock' && botChoice === 'scissors') {
+                ruleExplanation = '🪨 BATU menghancurkan GUNTING! ✅';
+            } else if (playerChoice === 'scissors' && botChoice === 'paper') {
+                ruleExplanation = '✂️ GUNTING memotong KERTAS! ✅';
+            } else if (playerChoice === 'paper' && botChoice === 'rock') {
+                ruleExplanation = '📄 KERTAS membungkus BATU! ✅';
+            }
         }
         
         const embed = new EmbedBuilder()
             .setColor(resultColor)
-            .setTitle('✊ ROCK PAPER SCISSORS')
+            .setTitle('✊ ROCK PAPER SCISSORS ✊')
             .addFields(
                 { name: '👤 Kamu', value: `${emojis[playerChoice]} ${names[playerChoice]}`, inline: true },
                 { name: '🤖 Bot', value: `${emojis[botChoice]} ${names[botChoice]}`, inline: true },
@@ -74,7 +113,7 @@ module.exports = {
                 { name: '💎 Hasil Akhir', value: isWin ? `+${bet} credits` : isDraw ? '0 credits' : `-${bet} credits`, inline: true },
                 { name: '💳 Saldo Akhir', value: `${newBalance} credits`, inline: true }
             )
-            .setFooter({ text: `${message.author.username} • Win chance: 30%` });
+            .setFooter({ text: `${message.author.username} • ${ruleExplanation}`.trim() });
         
         await message.reply({ embeds: [embed] });
     }
