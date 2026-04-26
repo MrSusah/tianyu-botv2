@@ -4,7 +4,7 @@ const channelValidator = require('../utils/channelValidator');
 
 module.exports = {
     name: 'dadu',
-    description: 'Dice High/Low game - Tebak High (4-6) atau Low (1-3)',
+    description: 'Dice High/Low game - 30% win chance',
     
     async executePrefix(message, args, client) {
         if (!channelValidator.validateCasinoChannel(message.channelId)) {
@@ -34,33 +34,16 @@ module.exports = {
             return message.reply(`❌ Saldo tidak cukup! Punya ${balance} credits`);
         }
         
-        // Roll dadu 1-6
+        // Roll dadu 1-6 (hanya untuk tampilan)
         const dice = Math.floor(Math.random() * 6) + 1;
         const diceEmojis = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
         
-        // LOGIKA YANG BENAR
-        let isWin = false;
-        let category = '';
+        // PELUANG MENANG 30% (tidak tergantung hasil dadu)
+        const isWin = Math.random() < 0.30;
         
-        if (choice === 'high') {
-            // HIGH menang jika dadu 4, 5, atau 6
-            if (dice === 4 || dice === 5 || dice === 6) {
-                isWin = true;
-                category = 'HIGH ✅';
-            } else {
-                isWin = false;
-                category = 'LOW ❌';
-            }
-        } else if (choice === 'low') {
-            // LOW menang jika dadu 1, 2, atau 3
-            if (dice === 1 || dice === 2 || dice === 3) {
-                isWin = true;
-                category = 'LOW ✅';
-            } else {
-                isWin = false;
-                category = 'HIGH ❌';
-            }
-        }
+        // Tentukan kategori untuk tampilan
+        const isHigh = dice >= 4;
+        const category = isHigh ? 'HIGH' : 'LOW';
         
         // Proses transaksi
         if (isWin) {
@@ -71,6 +54,10 @@ module.exports = {
         
         const newBalance = await economy.getBalance(message.author.id);
         
+        // Tentukan apakah pilihan sesuai dengan dadu (hanya untuk info)
+        const isChoiceMatch = (choice === 'high' && isHigh) || (choice === 'low' && !isHigh);
+        const matchText = isChoiceMatch ? '✅ (Sesuai)' : '❌ (Tidak Sesuai)';
+        
         // Buat embed
         const embed = new EmbedBuilder()
             .setTitle('🎲 **DICE HIGH/LOW** 🎲')
@@ -78,18 +65,18 @@ module.exports = {
             .addFields(
                 { name: '🎯 Pilihan Kamu', value: choice === 'high' ? 'HIGH (4-6)' : 'LOW (1-3)', inline: true },
                 { name: '🎲 Hasil Dadu', value: `${diceEmojis[dice-1]} **${dice}**`, inline: true },
-                { name: '📊 Kategori', value: category, inline: true },
+                { name: '📊 Kategori', value: `${category} ${matchText}`, inline: true },
                 { name: '━━━━━━━━━━', value: '━━━━━━━━━━━━━━━━━━', inline: false },
-                { name: '📊 Status', value: isWin ? '✅ MENANG!' : '❌ KALAH!', inline: true },
+                { name: '🎲 Result', value: isWin ? '✅ MENANG!' : '❌ KALAH!', inline: true },
                 { name: '💰 Taruhan', value: `${amount.toLocaleString()} credits`, inline: true },
-                { name: '💎 Hasil Akhir', value: isWin ? `+${(amount * 2).toLocaleString()}` : `-${amount.toLocaleString()}`, inline: true },
+                { name: '💎 Hasil', value: isWin ? `+${(amount * 2).toLocaleString()}` : `-${amount.toLocaleString()}`, inline: true },
                 { name: '💳 Saldo Akhir', value: `${newBalance.toLocaleString()} credits`, inline: true }
             )
-            .setFooter({ text: `${message.author.username} • Peluang menang: 50%` });
+            .setFooter({ text: `${message.author.username} • Win chance: 30%` });
         
         await message.reply({ embeds: [embed] });
         
         // Log ke console untuk debugging
-        console.log(`[DADU] ${message.author.username} | Pilihan: ${choice} | Dadu: ${dice} | Hasil: ${isWin ? 'MENANG' : 'KALAH'} | ${isWin ? `+${amount*2}` : `-${amount}`}`);
+        console.log(`[DADU] ${message.author.username} | Pilihan: ${choice} | Dadu: ${dice} | Win: ${isWin ? 'YES' : 'NO'} | ${isWin ? `+${amount*2}` : `-${amount}`}`);
     }
 };
