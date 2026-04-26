@@ -36,13 +36,31 @@ module.exports = {
         
         // Roll dadu 1-6
         const dice = Math.floor(Math.random() * 6) + 1;
-        const isHigh = dice >= 4;
         const diceEmojis = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
         
-        // LOGIKA YANG BENAR: Menang jika pilihan sesuai hasil dadu
-        // HIGH menang jika dadu 4,5,6
-        // LOW menang jika dadu 1,2,3
-        const isWin = (choice === 'high' && isHigh) || (choice === 'low' && !isHigh);
+        // LOGIKA YANG BENAR
+        let isWin = false;
+        let category = '';
+        
+        if (choice === 'high') {
+            // HIGH menang jika dadu 4, 5, atau 6
+            if (dice === 4 || dice === 5 || dice === 6) {
+                isWin = true;
+                category = 'HIGH ✅';
+            } else {
+                isWin = false;
+                category = 'LOW ❌';
+            }
+        } else if (choice === 'low') {
+            // LOW menang jika dadu 1, 2, atau 3
+            if (dice === 1 || dice === 2 || dice === 3) {
+                isWin = true;
+                category = 'LOW ✅';
+            } else {
+                isWin = false;
+                category = 'HIGH ❌';
+            }
+        }
         
         // Proses transaksi
         if (isWin) {
@@ -53,30 +71,25 @@ module.exports = {
         
         const newBalance = await economy.getBalance(message.author.id);
         
-        // Tentukan teks hasil
-        let resultText = isWin ? '✅ MENANG!' : '❌ KALAH!';
-        let resultColor = isWin ? 0x00ff00 : 0xff0000;
-        
-        // Tentukan apakah pilihan sesuai
-        let isChoiceCorrect = false;
-        if (choice === 'high' && isHigh) isChoiceCorrect = true;
-        if (choice === 'low' && !isHigh) isChoiceCorrect = true;
-        
+        // Buat embed
         const embed = new EmbedBuilder()
             .setTitle('🎲 **DICE HIGH/LOW** 🎲')
-            .setColor(resultColor)
+            .setColor(isWin ? 0x00ff00 : 0xff0000)
             .addFields(
                 { name: '🎯 Pilihan Kamu', value: choice === 'high' ? 'HIGH (4-6)' : 'LOW (1-3)', inline: true },
                 { name: '🎲 Hasil Dadu', value: `${diceEmojis[dice-1]} **${dice}**`, inline: true },
-                { name: '📊 Kategori', value: isHigh ? 'HIGH' : 'LOW', inline: true },
-                { name: '📊 Kecocokan', value: isChoiceCorrect ? '✅ SESUAI' : '❌ TIDAK SESUAI', inline: true },
-                { name: '📊 Status', value: resultText, inline: true },
+                { name: '📊 Kategori', value: category, inline: true },
+                { name: '━━━━━━━━━━', value: '━━━━━━━━━━━━━━━━━━', inline: false },
+                { name: '📊 Status', value: isWin ? '✅ MENANG!' : '❌ KALAH!', inline: true },
                 { name: '💰 Taruhan', value: `${amount.toLocaleString()} credits`, inline: true },
-                { name: '💎 Hasil', value: isWin ? `+${(amount * 2).toLocaleString()}` : `-${amount.toLocaleString()}`, inline: true },
+                { name: '💎 Hasil Akhir', value: isWin ? `+${(amount * 2).toLocaleString()}` : `-${amount.toLocaleString()}`, inline: true },
                 { name: '💳 Saldo Akhir', value: `${newBalance.toLocaleString()} credits`, inline: true }
             )
-            .setFooter({ text: `${message.author.username} • Peluang menang: 50% (3 dari 6 kemungkinan)` });
+            .setFooter({ text: `${message.author.username} • Peluang menang: 50%` });
         
         await message.reply({ embeds: [embed] });
+        
+        // Log ke console untuk debugging
+        console.log(`[DADU] ${message.author.username} | Pilihan: ${choice} | Dadu: ${dice} | Hasil: ${isWin ? 'MENANG' : 'KALAH'} | ${isWin ? `+${amount*2}` : `-${amount}`}`);
     }
 };
